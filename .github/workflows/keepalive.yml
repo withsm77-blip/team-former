@@ -1,0 +1,31 @@
+# Supabase 무료 프로젝트가 일시정지되지 않도록 매일 DB에 질의를 보냄 (공고 3장 어려운 해결)
+name: DB keepalive
+
+on:
+  schedule:
+    - cron: "17 0 * * *"     # 매일 00:17 UTC = 한국 시각 09:17
+  workflow_dispatch:
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install "psycopg[binary]>=3.2"
+      - name: Query DB
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          python - <<'EOF'
+          import os, psycopg
+          with psycopg.connect(os.environ["DATABASE_URL"], prepare_threshold=None, connect_timeout=20) as conn:
+              n = conn.execute("select count(*) from tf_students").fetchone()[0]
+              conn.execute(
+                  "insert into tf_settings (key, value, updated_at) values ('keepalive', now()::text, now()) "
+                  "on conflict (key) do update set value = excluded.value, updated_at = now()"
+              )
+          print(f"DB OK: tf_students {n} rows")
+          EOF
